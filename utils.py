@@ -10,6 +10,7 @@ from nltk.tag import pos_tag
 import math
 from operator import itemgetter
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 def set_plot_properties(x_label, y_label, y_lim=[]):
@@ -419,3 +420,31 @@ def count_vectorizer_to_df(train, words):
     train_vectorized = pd.DataFrame(train_frequency_matrix.toarray(), columns=vectorizer.get_feature_names_out(), index=train.index)
 
     return train_vectorized
+
+
+def oh_count_vectorizer_to_df(list_of_strings, words):
+    
+    # Create an instance of the CountVectorizer class - Default vectorizer does not remove stop words
+    vectorizer = CountVectorizer(vocabulary=words, binary = True, stop_words=None)
+
+    # Fit the vectorizer to the text data and transform the text data into a onehot encoded matrix
+    ohe_matrix = vectorizer.fit_transform(list_of_strings)
+
+    # Convert the frequency matrix to a Pandas DataFrame
+    df = pd.DataFrame(ohe_matrix.toarray(), columns=vectorizer.get_feature_names()) #get_feature_names_out()
+
+    return df
+
+
+def tf_idf_to_df(list_of_strings):
+    
+    # Create an instance of the TdidfVectorized class - Default vectorizer does not remove stop words
+    vectorizer = TfidfVectorizer()
+
+    # Fit the vectorizer to the text data and transform the text data into a frequency matrix
+    frequency_matrix = vectorizer.fit_transform(list_of_strings)
+
+    # Convert the frequency matrix to a Pandas DataFrame
+    df = pd.DataFrame(frequency_matrix.toarray(), columns=vectorizer.get_feature_names()) #get_feature_names_out()
+
+    return df
