@@ -352,6 +352,9 @@ def text_preprocessing(data, text_column, target=None):
     # if target is not None:
         text_data = pd.DataFrame(text_data, columns=[text_column])
         text_data[target] = data[target]
+
+    else:
+        text_data = pd.DataFrame(text_data, columns=[text_column])
     
     return text_data
 
