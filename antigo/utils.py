@@ -9,12 +9,10 @@ from nltk.stem import WordNetLemmatizer
 from nltk.tag import pos_tag
 import math
 from operator import itemgetter
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.metrics import f1_score, classification_report
-from sklearn.model_selection import StratifiedKFold, GridSearchCV, RandomizedSearchCV
-import csv
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-##### VISUALIZATION
+
 def set_plot_properties(x_label, y_label, y_lim=[]):
     """
     Set properties of a plot axis.
@@ -94,17 +92,12 @@ def plot_histogram(data, variable, x_label, y_label='Count', color='cadetblue', 
     set_plot_properties(x_label, y_label)  # Set plot properties using helper function
 
 
-##### PREPROCESSING
-def lower_case(text):
-    return text.lower()
-
-
 def expand_contractions(text):
     contractions_dict = { 
         "ain't": "is not",
         "aren't": "are not",
-        "can't": "can not",
-        "can't've": "can not have",
+        "can't": "cannot",
+        "can't've": "cannot have",
         "'cause": "because",
         "could've": "could have",
         "couldn't": "could not",
@@ -125,12 +118,12 @@ def expand_contractions(text):
         "how'd'y": "how do you",
         "how'll": "how will",
         "how's": "how is",
-        "i'd": "i would",
-        "i'd've": "i would have",
-        "i'll": "i will",
-        "i'll've": "i will have",
-        "i'm": "i am",
-        "i've": "i have",
+        "I'd": "I would",
+        "I'd've": "I would have",
+        "I'll": "I will",
+        "I'll've": "I will have",
+        "I'm": "I am",
+        "I've": "I have",
         "isn't": "is not",
         "it'd": "it would",
         "it'd've": "it would have",
@@ -234,69 +227,141 @@ def expand_contractions(text):
 
 def sub_remove(text):
     # Remove noise
-    x = re.sub(r"(@[A-Za-z0-9]+)|([^0-9A-Za-z ])|(\w+:\/\/\S+)|http.+?", " ", text, flags=re.MULTILINE)
+    x = re.sub(r"(@[A-Za-z0-9]+)|([^0-9A-Za-z \t\n])|(\w+:\/\/\S+)|^rt|http.+?", "", text, flags=re.MULTILINE)
+    
+    # Replace newline and tab characters with spaces
+    x = re.sub(r'[\t\n]', ' ', x)
     
     return x
 
 
 def sub_spaces(text):
     x = re.sub(r' +', ' ', text)
-    return x
+    return(x)
 
 
-def tokenization(lyrics):
-    tokenizer = RegexpTokenizer('\w+')
-    return tokenizer.tokenize(lyrics)
+# def text_preprocessing(data, text_column, target=None):
+#     text_data = data[text_column].copy()
+    
+#     functions = [lambda x: x.lower(), 
+#                  expand_contractions, 
+#                  sub_remove, 
+#                  sub_spaces]
+
+#     if target is not None:
+#         regexp = RegexpTokenizer('\w+')
+#         wordnet_lem = WordNetLemmatizer()
+#         stopwords = nltk.corpus.stopwords.words('english')
+        
+#         functions.extend([regexp.tokenize,
+#                         #   lambda x: pos_tag(x),
+#                           lambda x: [wordnet_lem.lemmatize(y) for y in x],
+#                           lambda x: [item for item in x if item not in stopwords],
+#                           lambda x: ' '.join(x)
+#                         ])
+    
+#     for function in functions:
+#         text_data = text_data.apply(function)
+
+#     if target is not None:
+#         text_data = pd.DataFrame(text_data, columns=[text_column])
+#         text_data[target] = data[target]
+    
+#     return text_data
 
 
-def lemmatization(words):
+# def simplify_pos_tag(pos_tag):
+#     if pos_tag.startswith('V'):
+#         return 'v'  # Verbs
+    
+#     elif pos_tag.endswith('RB'):
+#         return 'r'  # Adverbs
+    
+#     elif pos_tag == 'JJ':
+#         return 'a'  # Adjectives
+    
+#     else:
+#         return 'n'  # Nouns
+
+
+def get_wordnet_pos(pos_tag):
+    """
+    Map Treebank part-of-speech tags to WordNet part-of-speech tags.
+    """
+    if pos_tag.startswith('V'):
+        return wordnet.VERB
+    
+    elif 'RB' in pos_tag:
+        return wordnet.ADV
+    
+    elif pos_tag.startswith('JJ'):
+        return wordnet.ADJ
+    
+    else:
+        return wordnet.NOUN
+
+
+def lemmatize_with_mapping(words, words_map):
     lemmatizer = WordNetLemmatizer()
 
-    for pos_tag in ['v', 'n', 'a', 'r']:
-        words = [lemmatizer.lemmatize(word, pos=pos_tag) for word in words]
+    lemmatized_words = []
+    for word in words:
+        pos = words_map.get(word)
+        lemmatized_words.append(lemmatizer.lemmatize(word, pos=pos))
 
-    return words
-
-
-def stopwords_removal(words):
-    stopwords = nltk.corpus.stopwords.words('english')
-    return [word for word in words if word not in stopwords]
-
-
-def join_tokens(tokens):
-    return ' '.join(tokens)
+    return lemmatized_words
 
 
 def text_preprocessing(data, text_column, target=None):
     text_data = data[text_column].copy()
     
-    functions = [lower_case, 
+    functions = [lambda x: x.lower(), 
                  expand_contractions, 
                  sub_remove, 
                  sub_spaces]
 
-    if target is not None:
-        additional_functions = [tokenization,
-                                lemmatization,
-                                # stopwords_removal,
-                                join_tokens]
-
-        functions.extend(additional_functions)
-
     for function in functions:
         text_data = text_data.apply(function)
 
-    text_data = pd.DataFrame(text_data, columns=[text_column])
-
     if target is not None:
+        regexp = RegexpTokenizer('\w+')
+        text_data = text_data.apply(regexp.tokenize)
+
+        words = [word for tokens in text_data for word in tokens]
+        words_unique = list(set(words))
+        words_tagged = pos_tag(words_unique)
+        words_pos_map = {word: get_wordnet_pos(pos_tag) for word, pos_tag in words_tagged}
+
+        # lemmatizer = WordNetLemmatizer()
+        # text_data = [
+        #     [lemmatizer.lemmatize(word, pos=words_pos_map.get(word)) for word in sentence]
+        #     for sentence in text_data
+        #     ]
+        
+        # stopwords = nltk.corpus.stopwords.words('english')
+
+        additional_functions = [lemmatize_with_mapping,
+                    #   lambda x: [item for item in x if item not in stopwords],
+                      lambda x: ' '.join(x)
+                      ]
+    
+        for additional_function in additional_functions:
+            text_data = text_data.apply(additional_function, args=(words_pos_map,) 
+                                        if additional_function == lemmatize_with_mapping else ())
+
+    # if target is not None:
+        text_data = pd.DataFrame(text_data, columns=[text_column])
         text_data[target] = data[target]
+
+    else:
+        text_data = pd.DataFrame(text_data, columns=[text_column])
     
     return text_data
 
-##### LOG RATIO
+
 def log_ratio(genre_freqs, genre_percentages, total_words=100):
     # Get the overall frequency distribution for all genres
-    all_freq = genre_freqs['all']
+    all_freq = genre_freqs['freq_all']
 
     # Create a dictionary to store the log ratios for each genre
     genre_log_ratios = {}
@@ -309,11 +374,11 @@ def log_ratio(genre_freqs, genre_percentages, total_words=100):
 
     for genre, genre_freq in genre_freqs.items():
         # Skip the overall frequency distribution
-        if genre == 'all':
+        if genre == 'freq_all':
             continue
 
         # Get the percentage of representativeness for the current genre
-        genre_percentage = genre_percentages.get(genre)
+        genre_percentage = genre_percentages.get(genre.split('_')[1])
 
         # Calculate the number of words to select for the genre based on its representativeness
         words_to_select = int(round(genre_percentage * total_words))
@@ -347,181 +412,42 @@ def log_ratio(genre_freqs, genre_percentages, total_words=100):
     return genre_log_ratios
 
 
-def filter_lyrics(lyrics, word_set):
-    return ' '.join(word for word in lyrics.split() if word in word_set)
-
-
-##### VECTORIZATION
 def count_vectorizer_to_df(train, words):
     # Create an instance of the CountVectorizer class - Default vectorizer does not remove stop words
-    vectorizer = CountVectorizer(vocabulary=words, stop_words=None, token_pattern=r'(?u)\b\w+\b')
+    vectorizer = CountVectorizer(vocabulary=words, stop_words=None)
 
     # Fit the vectorizer to the text data and transform the text data into a frequency matrix
     train_frequency_matrix = vectorizer.fit_transform(train)
 
     # Convert the frequency matrix to a Pandas DataFrame
-    train_vectorized = pd.DataFrame(train_frequency_matrix.toarray(), columns=vectorizer.get_feature_names_out(), index=train.index) #get_feature_names()
+    train_vectorized = pd.DataFrame(train_frequency_matrix.toarray(), columns=vectorizer.get_feature_names_out(), index=train.index)
 
     return train_vectorized
 
 
-def oh_count_vectorizer_to_df(train, words):
+def oh_count_vectorizer_to_df(list_of_strings, words):
+    
     # Create an instance of the CountVectorizer class - Default vectorizer does not remove stop words
-    vectorizer = CountVectorizer(vocabulary=words, binary = True, stop_words=None, token_pattern=r'(?u)\b\w+\b')
+    vectorizer = CountVectorizer(vocabulary=words, binary = True, stop_words=None)
 
     # Fit the vectorizer to the text data and transform the text data into a onehot encoded matrix
-    ohe_matrix = vectorizer.fit_transform(train)
+    ohe_matrix = vectorizer.fit_transform(list_of_strings)
 
     # Convert the frequency matrix to a Pandas DataFrame
-    df = pd.DataFrame(ohe_matrix.toarray(), columns=vectorizer.get_feature_names_out(), index=train.index) #get_feature_names()
+    df = pd.DataFrame(ohe_matrix.toarray(), columns=vectorizer.get_feature_names()) #get_feature_names_out()
 
     return df
 
 
-def tf_idf_to_df(train):
+def tf_idf_to_df(list_of_strings):
+    
     # Create an instance of the TdidfVectorized class - Default vectorizer does not remove stop words
-    vectorizer = TfidfVectorizer(token_pattern=r'(?u)\b\w+\b')
+    vectorizer = TfidfVectorizer()
 
     # Fit the vectorizer to the text data and transform the text data into a frequency matrix
-    frequency_matrix = vectorizer.fit_transform(train)
+    frequency_matrix = vectorizer.fit_transform(list_of_strings)
 
     # Convert the frequency matrix to a Pandas DataFrame
-    df = pd.DataFrame(frequency_matrix.toarray(), columns=vectorizer.get_feature_names_out(), index=train.index) #get_feature_names()
+    df = pd.DataFrame(frequency_matrix.toarray(), columns=vectorizer.get_feature_names()) #get_feature_names_out()
 
     return df
-
-
-##### MODEL EVALUATION
-def model_evaluation(model, X_train, X_val, y_train, y_val):
-    model.fit(X_train, y_train)
-    y_train_pred = model.predict(X_train)
-    y_val_pred = model.predict(X_val)
-    print('Training set:')
-    print(classification_report(y_train, y_train_pred))
-    print('Validation set:')
-    print(classification_report(y_val, y_val_pred))
-
-
-def avg_score(model, X, y, scaler=None): 
-    '''
-    Calculate the average F1 score for a given model using cross-validation.
-
-    Parameters:
-    -----------
-    model : sklearn model object
-        The model to evaluate.
-
-    X : pandas.DataFrame
-        Feature matrix.
-
-    y : pandas.Series
-        Target variable.
-
-    scaler : Scaler object, optional (default=None)
-        Scaler for feature scaling.
-
-    Returns:
-    --------
-    str
-        A string containing the average F1 score +/- its standard deviation for train and test sets.
-
-    Notes:
-    ------
-    - Utilizes Stratified K-Fold cross-validation with 10 splits.
-    - Computes F1 score for train and test sets and calculates their average and standard deviation.
-    '''
-    # Apply k-fold cross-validation
-    skf = StratifiedKFold(n_splits=5)
-
-    # Create lists to store the results from different folds
-    score_train = []
-    score_test = []
-
-    for train_index, val_index in skf.split(X, y):
-        # Get the indexes of the observations assigned for each partition
-        X_train, X_val = X.iloc[train_index], X.iloc[val_index]
-        y_train, y_val = y.iloc[train_index], y.iloc[val_index]
-        
-        if scaler is not None:
-            # Fit and transform scaler on training data
-            scaling = scaler.fit(X_train)
-            X_train = scaling.transform(X_train)
-            # Transform validation data using the scaler fitted on training data
-            X_val = scaling.transform(X_val)
-        
-        # Fit the model to the training data
-        model.fit(X_train, y_train)
-        
-        # Calculate F1 score for train and test sets
-        value_train = f1_score(y_train, model.predict(X_train), average='weighted')
-        value_test = f1_score(y_val, model.predict(X_val), average='weighted')
-        
-        # Append the F1 scores
-        score_train.append(value_train)
-        score_test.append(value_test)
- 
-    # Calculate the average and the standard deviation for train and test F1 scores
-    avg_train = round(np.mean(score_train), 3)
-    avg_test = round(np.mean(score_test), 3)
-    std_train = round(np.std(score_train), 3)
-    std_test = round(np.std(score_test), 3)
-    
-    # Format and return the results as a string
-    return (
-        str(avg_train) + '+/-' + str(std_train),
-        str(avg_test) + '+/-' + str(std_test)
-    )
-
-
-def show_results(model, dict, cv=False):
-    for technique, data in dict.items():
-        if cv:
-            print(technique, 
-                  avg_score(model, data[0], data[1]))
-        else:
-            print(technique)
-            model_evaluation(model, data[0], data[1], data[2], data[3])
-
-
-def grid_search(model, parameters, X, y, log=False):
-    grid_search = GridSearchCV(estimator=model,
-                               param_grid=parameters,
-                               scoring='f1_weighted',
-                               cv=2,
-                               verbose=2
-                            #    n_jobs=-1,
-                               )
-
-    grid_search.fit(X, y)
-    best_parameters = grid_search.best_params_
-    best_accuracy = grid_search.best_score_
-
-    print('Best parameters: {}'.format(best_parameters))
-    print('Best accuracy: {}'.format(best_accuracy))
-    
-    if log:
-        with open('record.csv', 'a', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow([X.columns, model, parameters, best_accuracy])
-
-
-# def random_search(model, parameters, X, y, log=False):
-#     grid_search = RandomizedSearchCV(estimator=model,
-#                                      param_grid=parameters,
-#                                      scoring='f1_weighted',
-#                                      cv=2,
-#                                      verbose=2,
-#                                     #  n_jobs=-1
-#                                      )
-
-#     grid_search.fit(X, y)
-#     best_parameters = grid_search.best_params_
-#     best_accuracy = grid_search.best_score_
-
-#     print('Best parameters: {}'.format(best_parameters))
-#     print('Best accuracy: {}'.format(best_accuracy))
-    
-#     if log:
-#         with open('record.csv', 'a', newline='') as file:
-#             writer = csv.writer(file)
-#             writer.writerow([X.columns, model, parameters, best_accuracy])
