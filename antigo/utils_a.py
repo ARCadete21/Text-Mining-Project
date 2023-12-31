@@ -1,23 +1,20 @@
 import numpy as np
 import pandas as pd
-import keras
 import matplotlib.pyplot as plt
 import re
 import nltk
 from nltk.tokenize import RegexpTokenizer, word_tokenize
 from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
-from nltk.probability import FreqDist
 from nltk.tag import pos_tag
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import math
 from operator import itemgetter
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.metrics import f1_score, classification_report
 from sklearn.model_selection import StratifiedKFold, GridSearchCV, RandomizedSearchCV
 import csv
-import seaborn as sns
-from textblob import TextBlob
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
 
 ##### VISUALIZATION
 def set_plot_properties(x_label, y_label, y_lim=[]):
@@ -98,33 +95,6 @@ def plot_histogram(data, variable, x_label, y_label='Count', color='cadetblue', 
 
     set_plot_properties(x_label, y_label)  # Set plot properties using helper function
 
-def sentiment_differences_across_genres(dataframes, titles):
-
-    # Combine the dataframes into one dataframe with a 'source' column
-    combined_df = pd.concat([df.assign(source=title) for df, title in zip(dataframes, titles)], ignore_index=True)
-
-    custom_palette = ["#5F9EA0", "#E2D8C1", "#28233B"]
-
-    # Set up the bar plot
-    plt.figure(figsize=(18, 6))
-    sns.barplot(x='tag', y='polarity', hue='source', data=combined_df, palette = custom_palette)
-
-    # Customize the plot
-    plt.title('Sentiment Differences Across Genres')
-    plt.xlabel('Genre')
-    plt.ylabel('Mean Sentiment Score')
-    plt.legend(title='Source', loc='upper right')
-
-    # Show the plot
-    plt.show()
-
-
-def plot_confusion_matrix(ax, matrix, title, color_map='Blues'):
-    sns.heatmap(matrix, annot=True, fmt='d', cmap=color_map, ax=ax)
-    ax.set_title('{} Confusion Matrix'.format(title))
-    ax.set_xlabel('Predicted Labels')
-    ax.set_ylabel('True Labels')
-    
 
 ##### PREPROCESSING
 def lower_case(text):
@@ -264,6 +234,12 @@ def expand_contractions(text):
     return expanded_text
 
 
+# def sub_remove(text):
+#     # Remove noise
+#     x = re.sub(r"(@[A-Za-z0-9]+)|([^0-9A-Za-z ])|(\w+:\/\/\S+)|http.+?", " ", text, flags=re.MULTILINE)
+    
+#     return x
+
 emoji_pattern = re.compile("["
     u"\U0001F600-\U0001F64F"  # Emoticons
     u"\U0001F300-\U0001F5FF"  # Symbols & pictographs
@@ -280,15 +256,12 @@ emoji_pattern = re.compile("["
 
 
 def sub_remove(x):
-    '''
-    Remove noise
-    email addresses
-    social media tags
-    characters that are not letters, numbers and (conditionally) emojis
-    website links (both www and https)
-    html tags
-    '''
-
+    # Remove noise, respectively...
+    # email addresses
+    # social media tags
+    # characters that are not letters, numbers and (condionally) emojis
+    # website links (both www and https)
+    # html tags
     x = re.sub(r"(\b[A-Za-z0-9.%+-]+@[A-Za-z0-9.-]+.[A-Z|a-z]{2,}\b)", " ", x)
     x = re.sub(r"(@[A-Za-z0-9]+)|([^0-9A-Za-z{} ])|(\w+://\S+)|(http.+?)|(<.*?>)".format(emoji_pattern.pattern[1:-1]), 
                " ", x, flags=re.MULTILINE)
@@ -301,12 +274,31 @@ def sub_spaces(text):
     return x
 
 
+# def tokenization(lyrics):
+#     tokenizer = RegexpTokenizer('\w+')
+#     return tokenizer.tokenize(lyrics)
+
+
 def tokenization_emojis(lyrics):
+
+    emoji_pattern = re.compile("["
+                    u"\U0001F600-\U0001F64F"  # Emoticons
+                    u"\U0001F300-\U0001F5FF"  # Symbols & pictographs
+                    u"\U0001F680-\U0001F6FF"  # Transport & map symbols
+                    u"\U0001F700-\U0001F77F"  # Alchemical symbols                           
+                    u"\U0001F780-\U0001F7FF"  # Geometric shapes
+                    u"\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+                    u"\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+                    u"\U0001FA00-\U0001FA6F"  # Chess symbols
+                    u"\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+                    "]+", flags=re.UNICODE)
+
     tokenizer = RegexpTokenizer(r'\w+|' + emoji_pattern.pattern)
+
     return tokenizer.tokenize(lyrics)
 
-
 def tokenization(lyrics):
+
     tokenizer = RegexpTokenizer('\w+')
     return tokenizer.tokenize(lyrics)
 
@@ -327,6 +319,33 @@ def stopwords_removal(words):
 
 def join_tokens(tokens):
     return ' '.join(tokens)
+
+
+# def text_preprocessing(data, text_column, target=None):
+#     text_data = data[text_column].copy()
+    
+#     functions = [lower_case, 
+#                  expand_contractions, 
+#                  sub_remove, 
+#                  sub_spaces]
+
+#     if target is not None:
+#         additional_functions = [tokenization,
+#                                 lemmatization,
+#                                 # stopwords_removal,
+#                                 join_tokens]
+
+#         functions.extend(additional_functions)
+
+#     for function in functions:
+#         text_data = text_data.apply(function)
+
+#     text_data = pd.DataFrame(text_data, columns=[text_column])
+
+#     if target is not None:
+#         text_data[target] = data[target]
+    
+#     return text_data
 
 
 def text_preprocessing(data, text_column, target=None, apply_stopwords_removal=False, emojis_removal=True):
@@ -353,52 +372,7 @@ def text_preprocessing(data, text_column, target=None, apply_stopwords_removal=F
 
 
 ##### LOG RATIO
-def genre_percentages(df):
-    genre_percentages = (df['tag'].value_counts() / len(df))
-    genre_percentages_dict = genre_percentages.to_dict()
-
-    return genre_percentages, genre_percentages_dict
-
-
-def genre_frequencies(df, genre_percentages, genre_percentages_dict):
-    # Create a dictionary to store data for each genre
-    genre_freqs = {}
-
-    # Create a list to store all tokens from all genres
-    all_tokens = []
-
-    # Iterate through unique genres
-    for genre in genre_percentages_dict.keys():
-        # Create a subset of the DataFrame for the current genre
-        genre_df = df.loc[df['tag'] == genre].drop(columns=['tag'])
-        
-        # Join the 'lyrics_string_fdist' column and tokenize
-        genre_lyrics = ' '.join(list(genre_df['lyrics']))
-        genre_tokens = word_tokenize(genre_lyrics)
-        
-        # Append tokens to the list for overall frequency distribution
-        all_tokens.extend(genre_tokens)
-
-        # Calculate frequency distribution for the current genre
-        genre_freq = FreqDist(genre_tokens)
-        
-        # Store the data in the dictionary
-        genre_freqs[genre] = genre_freq
-
-    # Calculate overall frequency distribution
-    overall_freq = FreqDist(all_tokens)
-
-    # Add the overall frequency distribution to the dictionary
-    genre_freqs['all'] = overall_freq
-    
-    # iverted order
-    genre_freqs_inverted = {key: genre_freqs[key] for key in genre_percentages.keys()[::-1]}
-    genre_freqs_inverted['all'] = genre_freqs['all']
-
-    return genre_freqs, genre_freqs_inverted, overall_freq
-
-
-def log_ratio(genre_freqs, genre_percentages, total_words=100, separate=False):
+def log_ratio(genre_freqs, genre_percentages, total_words=100):
     # Get the overall frequency distribution for all genres
     all_freq = genre_freqs['all']
 
@@ -411,177 +385,48 @@ def log_ratio(genre_freqs, genre_percentages, total_words=100, separate=False):
     # Calculate total number of words in all genres
     total_all_words = all_freq.N()
 
-    if not separate:
+    for genre, genre_freq in genre_freqs.items():
+        # Skip the overall frequency distribution
+        if genre == 'all':
+            continue
 
-        for genre, genre_freq in genre_freqs.items():
-            # Skip the overall frequency distribution
-            if genre == 'all':
-                continue
+        # Get the percentage of representativeness for the current genre
+        genre_percentage = genre_percentages.get(genre)
 
-            # Get the percentage of representativeness for the current genre
-            genre_percentage = genre_percentages.get(genre)
+        # Calculate the number of words to select for the genre based on its representativeness
+        words_to_select = int(round(genre_percentage * total_words))
 
-            # Calculate the number of words to select for the genre based on its representativeness
-            words_to_select = int(round(genre_percentage * total_words))
+        # Calculate the genre's top words
+        genre_freq_top = genre_freq.most_common(words_to_select * 5)
 
-            # Calculate the genre's top words
-            genre_freq_top = genre_freq.most_common(words_to_select * 5)
+        # Calculate log ratios for the top words
+        log_ratios = {
+            word: math.log(((freq + 1) / (genre_freq.N() + 1)) / ((all_freq[word] + 1) / (total_all_words + 1)))
+            for word, freq in genre_freq_top
+        }
 
-            # Calculate log ratios for the top words
-            log_ratios = {
-                word: math.log(((freq + 1) / (genre_freq.N() + 1)) / ((all_freq[word] + 1) / (total_all_words + 1)))
-                for word, freq in genre_freq_top
-            }
+        # Sort log ratios
+        sorted_log_ratios = sorted(log_ratios.items(), key=itemgetter(1), reverse=True)
 
-            # Sort log ratios
-            sorted_log_ratios = sorted(log_ratios.items(), key=itemgetter(1), reverse=True)
-
-            # Select the top words that are not already selected
-            selected_words = []
-            for word, ratio in sorted_log_ratios:
-                if word not in selected_words_set:
-                    selected_words.append((word, ratio))
-                    selected_words_set.add(word)
-
-                    # Break once the required number of unique words are selected for the genre
-                    if len(selected_words) == words_to_select:
-                        break
-
-            # Store the top log ratios for the genre
-            genre_log_ratios[genre] = selected_words
-
-        return genre_log_ratios
-            
-    else:
-
-        for genre, genre_freq in genre_freqs.items():
-            # Skip the overall frequency distribution
-            if genre == 'all':
-                continue
-
-            # Equal percentages if separate is True
-            genre_percentage = 1/6
-
-            # Calculate the number of words to select for the genre based on its representativeness
-            words_to_select = int(round(genre_percentage * total_words))
-
-            # Calculate the genre's top words
-            genre_freq_top = genre_freq.most_common(words_to_select * 5)
-
-            # Calculate log ratios for the top words
-            log_ratios = {
-                word: math.log(((freq + 1) / (genre_freq.N() + 1)) / ((all_freq[word] + 1) / (total_all_words + 1)))
-                for word, freq in genre_freq_top
-            }
-
-            # Sort log ratios
-            sorted_log_ratios = sorted(log_ratios.items(), key=itemgetter(1), reverse=True)
-
-            # Select the top words that are not already selected
-            selected_words = []
-            for word, ratio in sorted_log_ratios:
+        # Select the top words that are not already selected
+        selected_words = []
+        for word, ratio in sorted_log_ratios:
+            if word not in selected_words_set:
                 selected_words.append((word, ratio))
+                selected_words_set.add(word)
 
                 # Break once the required number of unique words are selected for the genre
                 if len(selected_words) == words_to_select:
                     break
 
-            # Store the top log ratios for the genre
-            genre_log_ratios[genre] = selected_words
+        # Store the top log ratios for the genre
+        genre_log_ratios[genre] = selected_words
 
-        return genre_log_ratios
+    return genre_log_ratios
 
 
 def filter_lyrics(lyrics, word_set):
     return ' '.join(word for word in lyrics.split() if word in word_set)
-
-
-##### DATA TRANSFORMATION
-def transformation(technique, data, column_transformer=False):
-    '''
-    Applies the specified transformation technique to the DataFrame.
-
-    Parameters:
-    -----------
-    technique : object
-        The transformation technique (e.g., from Scikit-learn) to be applied.
-
-    data : pandas.DataFrame
-        The input DataFrame to be transformed.
-
-    column_transformer : bool, optional (default=False)
-        Flag to indicate if a column transformer is used for custom column names.
-
-    Returns:
-    --------
-    data_transformed : pandas.DataFrame
-        Transformed DataFrame.
-
-    Notes:
-    ------
-    - If column_transformer is False, the columns in the transformed DataFrame
-      will retain the original column names.
-    - If column_transformer is True, the method assumes that technique has a
-      get_feature_names_out() method and uses it to get feature names for the
-      transformed data, otherwise retains the original column names.
-    '''
-    # Apply the specified transformation technique to the data
-    data_transformed = technique.transform(data)
-    
-    # Create a DataFrame from the transformed data
-    data_transformed = pd.DataFrame(
-        data_transformed,
-        index=data.index,
-        columns=technique.get_feature_names_out() if column_transformer else data.columns
-    )
-    
-    return data_transformed
-
-
-def data_transform(technique, X_train, X_val=None, column_transformer=False):
-    '''
-    Fits a data transformation technique on the training data and applies the transformation 
-    to both the training and validation data.
-
-    Parameters:
-    -----------
-    technique : object
-        The data transformation technique (e.g., from Scikit-learn) to be applied.
-
-    X_train : pandas.DataFrame or array-like
-        The training data to fit the transformation technique and transform.
-
-    X_val : pandas.DataFrame or array-like, optional (default=None)
-        The validation data to be transformed.
-
-    column_transformer : bool, optional (default=False)
-        Flag to indicate if a column transformer is used for custom column names.
-
-    Returns:
-    --------
-    X_train_transformed : pandas.DataFrame
-        Transformed training data.
-
-    X_val_transformed : pandas.DataFrame or None
-        Transformed validation data. None if X_val is None.
-
-    Notes:
-    ------
-    - Fits the transformation technique on the training data (X_train).
-    - Applies the fitted transformation to X_train and optionally to X_val if provided.
-    '''
-    # Fit the transformation technique on the training data
-    technique.fit(X_train)
-    
-    # Apply transformation to the training data
-    X_train_transformed = transformation(technique, X_train, column_transformer)
-    
-    # Apply transformation to the validation data if provided
-    X_val_transformed = None
-    if X_val is not None:
-        X_val_transformed = transformation(technique, X_val, column_transformer)
-        
-    return X_train_transformed, X_val_transformed
 
 
 ##### VECTORIZATION
@@ -629,37 +474,10 @@ def model_evaluation(model, X_train, X_val, y_train, y_val):
     model.fit(X_train, y_train)
     y_train_pred = model.predict(X_train)
     y_val_pred = model.predict(X_val)
-    score_train = f1_score(y_train, y_train_pred, average='weighted')
-    score_val = f1_score(y_val, y_val_pred, average='weighted')
-    print('TRAINING')
-    print('Weighted F1-score: {}%'.format(round(100*score_train, 2)))
-    print('\n', classification_report(y_train, y_train_pred))
-    print('\nVALIDATON')
-    print('Weighted F1-score: {}%'.format(round(100*score_val, 2)))
-    print('\n', classification_report(y_val, y_val_pred))
-
-    return score_train, score_val
-
-
-def model_evaluation_nn(model, X_train, X_val, y_train, y_val, callbacks=None):
-    model.fit(X_train, y_train, batch_size=5000, epochs=100, 
-              validation_data=(X_val, y_val), callbacks=callbacks)
-    
-    y_train_pred = model.predict(X_train)
-    y_train_pred = np.argmax(y_train_pred, axis=1)
-    score_train = f1_score(y_train, y_train_pred, average='weighted')
-    print('\nTRAINING')
-    print('Weighted F1-score: {}%'.format(round(100*score_train, 2)))
-    print('\n', classification_report(y_train, y_train_pred))
-
-    y_val_pred = model.predict(X_val)
-    y_val_pred = np.argmax(y_val_pred, axis=1)
-    score_val = f1_score(y_val, y_val_pred, average='weighted')
-    print('\nVALIDATION')
-    print('Weighted F1-score: {}%'.format(round(100*score_val, 2)))
-    print('\n', classification_report(y_val, y_val_pred))
-
-    return score_train, score_val
+    print('Training set:')
+    print(classification_report(y_train, y_train_pred))
+    print('Validation set:')
+    print(classification_report(y_val, y_val_pred))
 
 
 def avg_score(model, X, y, scaler=None): 
@@ -787,54 +605,13 @@ def grid_search(model, parameters, X, y, log=False):
 #             writer.writerow([X.columns, model, parameters, best_accuracy])
             
 
-# def build_model(hp):
-#   """
-#   Builds model and sets up hyperparameter space to search.
-
-#   Parameters
-#   ----------
-#   hp : HyperParameter object
-#       Configures hyperparameters to tune.
-
-#   Returns
-#   -------
-#   model : keras model
-#       Compiled model with hyperparameters to tune.
-#   """
-#   # Initialize sequential API and start building model.
-#   model = keras.Sequential()
-
-#   # Tune the number of hidden layers and units in each.
-#   # Number of hidden layers: 1 - 5
-#   # Number of Units: 32 - 512 with stepsize of 32
-#   for i in range(1, hp.Int('dense_num_layers', 1, 3) + 1):  ## The basic for loop for including several layers
-#       model.add(
-#           keras.layers.Dense(
-#               units=hp.Int('dense_units_' + str(i), min_value=20, max_value=200, step=20),
-#               activation='relu', kernel_regularizer=keras.regularizers.l2(hp.Float('l2', 0, 0.001, step=0.0005)))
-#           )
-#       # Dropout followin the previous dense layer means that after each layer we would have a dropout
-#       # Tune dropout layer with values from 0 - 0.3 with stepsize of 0.1.
-#       model.add(keras.layers.Dropout(hp.Float('dropout_' + str(i), 0, 0.5, step=0.1)))
-
-#   # Add output layer.
-#   model.add(keras.layers.Dense(units=6, activation='softmax'))
-
-#   # Tune learning rate for Adam optimizer with values from 0.01, 0.001, or 0.0001
-#   hp_learning_rate = hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])
-
-#   # Define optimizer, loss, and metrics
-#   model.compile(optimizer=keras.optimizers.Adam(learning_rate=hp_learning_rate),
-#                 loss=keras.losses.SparseCategoricalCrossentropy(),
-#                 metrics=['accuracy'])
-
-#   return model
 
 
 ##### SENTIMENT ANALYSIS
 
 ##### VADER
 def vader_wrapper(filtered_lyrics):
+
     vader = SentimentIntensityAnalyzer()
 
     if type(filtered_lyrics) == list:
@@ -852,8 +629,8 @@ def vader_wrapper(filtered_lyrics):
 
     return polarity
 
-
 def vader_analysis(word_set, df):
+
     vader = SentimentIntensityAnalyzer()
 
     # filter lyrics
@@ -862,9 +639,12 @@ def vader_analysis(word_set, df):
     # polarity lyric by lyric
     df['polarity'] = df['filtered_lyrics'].apply(lambda x: vader.polarity_scores(x)["compound"])
 
+    # # extract the compound
+    # df["polarity"] =  df["filtered_lyrics"].apply(lambda x: vader_wrapper(str(x)))
+
     # extract the label
     df['sentiment_label'] = np.select(
-    [df['polarity'] < -0.05, df['polarity'] > 0.05],
+    [df['polarity'] < -0.2, df['polarity'] > 0.2],
     ['negative', 'positive'],
     default='neutral')
     
@@ -872,102 +652,20 @@ def vader_analysis(word_set, df):
 
     return df
 
-
 def polarity_by_gender(df):
-    # mean polarity by gender
+
+    ### mean polarity by gender
     polarity_by_tag = df.groupby('tag')['polarity'].mean().reset_index()
 
-    # label
+    ### label
     polarity_by_tag['sentiment_label'] = np.select(
-        [polarity_by_tag['polarity'] < -0.05, 
-        polarity_by_tag['polarity'] > 0.05],
+        [polarity_by_tag['polarity'] < -0.2, 
+        polarity_by_tag['polarity'] > 0.2],
         ['negative', 'positive'],
         default='neutral')
 
     return polarity_by_tag
 
 
-def sentiment_differences_across_genres(dataframes, titles):
-
-    # Combine the dataframes into one dataframe with a 'source' column
-    combined_df = pd.concat([df.assign(source=title) for df, title in zip(dataframes, titles)], ignore_index=True)
-
-    # Set up the bar plot
-    plt.figure(figsize=(18, 6))
-    sns.barplot(x='tag', y='polarity', hue='source', data=combined_df)
-
-    # Customize the plot
-    plt.title('Sentiment Differences Across Genres')
-    plt.xlabel('Genre')
-    plt.ylabel('Mean Sentiment Score')
-    plt.legend(title='Source', loc='upper right')
-
-    # Show the plot
-    plt.show()
 
 
-#### TEXTBLOB    
-def textblob_analysis(word_set, df):
-    # filter lyrics
-    df['filtered_lyrics'] = df['lyrics'].apply(lambda x: filter_lyrics(x, word_set))
-
-    df['polarity'] = df['filtered_lyrics'].apply(lambda x: TextBlob(x).sentiment.polarity)    
-
-    # for lyric in df['filtered_lyrics']:
-    #     analysis = TextBlob(lyric)
-    #     analysis.sentiment  	    
-
-    # extract the label]
-    df['sentiment_label'] = np.select(
-    [df['polarity'] < -0.05, df['polarity'] > 0.05],
-    ['negative', 'positive'],
-    default='neutral')
-    
-    df = df.drop("lyrics", axis=1)
-
-    return df
-
-
-def emotion_scores(df, x, y, tag):
-    compound_list = []
-
-    if (df[y] == tag).any():
-        for sentence in df[df[y] == tag][x]:
-
-            emotions_nrc = NRCLex(sentence)
-            compound_list.append(emotions_nrc.raw_emotion_scores)
-
-    return compound_list
-
-
-def get_year_range(year):
-    year = float(year)
-
-    if year < 1500:
-        return "< 1500"
-    elif 1500 <= year < 1600:
-        return "50s"
-    elif 1600 <= year < 1700:
-        return "60s"
-    elif 1700 <= year < 1800:
-        return "70s"
-    elif 1800 <= year < 1900:
-        return "80s"
-    elif 1900 <= year < 2000:
-        return "90s"
-    elif 2000 <= year < 2010:
-        return "2000s"
-    elif 2010 <= year < 2020:
-        return "2010s"
-    elif year == 2020:
-        return "2020"
-    elif year == 2021:
-        return "2021"
-    elif year == 2022:
-        return "2022"
-    elif year == 2023:
-        return "2023"
-    elif year == 2024:
-        return "2024"
-    else:
-        return "Unknown"
